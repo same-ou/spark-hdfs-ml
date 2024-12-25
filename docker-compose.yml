@@ -1,0 +1,126 @@
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - 9870:9870
+      - 9010:9000
+    networks:
+      - spark-network
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+      - ./data:/tmp/data
+    environment:
+      - CLUSTER_NAME=test
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    env_file:
+      - ./hadoop.env
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 65535
+      memlock:
+        soft: -1  # Unlimited
+        hard: -1  # Unlimited
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+      CORE_CONF_fs_defaultFS: hdfs://namenode:9000
+    ports:
+      - "9864:9864"
+    networks:
+      - spark-network
+    env_file:
+      - ./hadoop.env
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 65535
+      memlock:
+        soft: -1  # Unlimited
+        hard: -1  # Unlimited
+    
+  spark-master:
+    image: bitnami/spark:3.5.0
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    ports:
+      - "8080:8080" # Spark Web UI
+      - "7077:7077" # Spark Master Port
+    networks:
+      - spark-network
+    volumes:
+      - ./apps:/opt/bitnami/spark/work
+
+  spark-worker-1:
+    image: bitnami/spark:3.5.0
+    container_name: spark-worker-1
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    depends_on:
+      - spark-master
+    networks:
+      - spark-network
+
+  spark-worker-2:
+    image: bitnami/spark:3.5.0
+    container_name: spark-worker-2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+    depends_on:
+      - spark-master
+    networks:
+      - spark-network
+
+  hue: 
+    image: gethue/hue
+    container_name: hue
+    ports:
+      - 8000:8888  # WebUI
+    depends_on:
+      - namenode
+    volumes:
+      - ./conf/hue.ini:/usr/share/hue/desktop/conf/z-hue.ini
+    networks:
+      - spark-network
+
+  jupyter:
+    image: jupyter/pyspark-notebook
+    container_name: jupyter
+    ports:
+      - 8888:8888
+    profiles:
+      - jupyter
+    volumes:
+      - ./notebooks:/home/jovyan/work
+    networks:
+      - spark-network
+      
+networks:
+  spark-network:
+    driver: bridge
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
